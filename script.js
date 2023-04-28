@@ -1,8 +1,19 @@
+/*
+    May need to change code to reflect the following:
+        The user should join and either make a new game, or join an existing game.
+        When the player makes a move, check with the server to see if it is valid,
+        if it is, then do the move and switch ON SERVER
+        Only enable movement if it is the user's turn
+
+*/
+
 const gameContainer = document.querySelector(".game-container")
 const letterMap = ["a","b","c","d","e","f","g","h"]
 const gameBoard = []
 let selectedPiece = null;
 let currentPlayer = 'w';
+let gameState = 'start';
+
 for (let row = 8; row >= 1; row--) {
     const rowArr = []
     for (let column = 0; column < 8; column++) {
@@ -34,11 +45,35 @@ for (let row = 8; row >= 1; row--) {
                 // If square chosen has  piece
                 // validate move if square is not player's square (Unless castle*)
                 if (squareInfo[0] !== currentPlayer ) {
-                    if (squareInfo == "None") {
-                        console.log(currentPlayer, "wants the",selectedPiece.piece, "on", selectedPiece.square, "to move to", cellPos)
-                    } else {
-                        console.log(currentPlayer, "wants the",selectedPiece.piece, "on", selectedPiece.square, "to take the", squareInfo.substring(1), 'on', cellPos)
+                    //start game if this is first move
+                    if (gameState == 'start') {
+                        gameState = 'play'
+                        timerStart = setInterval(()=> {
+                            if (whiteTimer <= 0 || blackTimer <= 0) {
+                                gameState = 'end'
+                                clearInterval(timerStart)
+                                return;
+                            }
+                            whiteVisualTimer.textContent = formatSeconds(whiteTimer);
+                            blackVisualTimer.textContent = formatSeconds(blackTimer);
+                    
+                            if (currentPlayer == 'w') {
+                                whiteTimer -= .1
+                            } else {
+                                blackTimer -= .1
+                            }
+                    
+                        },100)
                     }
+                    movePiece(selectedPiece.square, cellPos)
+                    switchTurn()
+                    // if (squareInfo == "None") {
+                    //     console.log(currentPlayer, "wants the",selectedPiece.piece, "on", selectedPiece.square, "to move to", cellPos)
+                    //     movePiece(selectedPiece.square, cellPos)
+                    // } else {
+                    //     console.log(currentPlayer, "wants the",selectedPiece.piece, "on", selectedPiece.square, "to take the", squareInfo.substring(1), 'on', cellPos)
+                    //     movePiece(selectedPiece.square, cellPos)
+                    // }
                 }  else {
                     console.log("That is your piece!")
                 }
@@ -63,6 +98,8 @@ function initializeGame(){
     gameBoard[6] = whitePawnRow
     gameBoard[7] = bottomRow
     drawBoard()
+    console.log(gameBoard)
+    
 }
 
 function drawBoard() {
@@ -97,4 +134,34 @@ function drawBoard() {
     }
 }
 
+function movePiece(from, to, castle=false) {
+    
+    // Implement keeping track of gained pieces
+
+    const fromRank = 8 - +from[1]
+    const fromFile = from.charCodeAt(0) - 97
+    const toRank = 8 - +to[1]
+    const toFile = to.charCodeAt(0) - 97
+    const fromPiece = gameBoard[fromRank][fromFile]
+    const toPiece = gameBoard[toRank][toFile]
+
+    //Move square from old to empty
+    gameBoard[toRank][toFile] = fromPiece
+    gameBoard[fromRank][fromFile] = "None"
+    const oldPiece = gameContainer.querySelector(`[square=${from}] div`)
+    gameContainer.querySelector(`[square=${to}]`).innerHTML = ''
+    gameContainer.querySelector(`[square=${to}]`).appendChild(oldPiece)
+}
+
+function switchTurn() {
+    //check if player won, draw, or resign
+    // if so change game state
+
+    currentPlayer = currentPlayer == 'd' ? 'w' : 'd';
+    // switch timer
+    
+
+
+}
 initializeGame()
+
