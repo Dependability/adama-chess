@@ -1,0 +1,32 @@
+body {
+    height: 100vh;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.game-container {
+    width: 480px;
+    height: 480px;
+    border: 2px black solid;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+}
+
+.game-container .cell.black {
+    background-color: rgb(179, 163, 163);
+}
+
+.game-container .cell {
+    display: flex
+}
+
+.game-container .cell div {
+    flex:1;
+    display: flex;
+}
+
+.game-container .cell div img{
+    flex: 1;
+}
