@@ -1,0 +1,7 @@
+{
+  "versions": {
+    "x": "public int x;"
+  },
+  "default": "x",
+  "plan": []
+}

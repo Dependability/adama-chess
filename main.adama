@@ -1,0 +1,168 @@
+@static {
+    create {
+        return true;
+    }
+    delete_on_close = true;
+}
+
+public principal playerW;
+public principal playerB;
+
+
+
+enum PieceType {
+    Pawn,
+    Knight,
+    Bishop,
+    Rook,
+    Queen,
+    King,
+    None
+}
+record Piece {
+    PieceType pieceInfo;
+    string color;
+    bool twice = false;
+    bool canCastle = false;
+    bool canTakeFromEnPassant = false;
+
+}
+record BoardSquare {
+    int rank;
+    int file;
+    Piece piece;
+}
+
+
+table<BoardSquare> _chessBoard;
+public formula chessBoard = iterate _chessBoard;
+public string PLEASE;
+@construct {
+    for (int row = 0; row < 8; row++ ) {
+        for (int column = 0; column < 8; column++ ) {
+            _chessBoard <- {rank: row, file: column, piece: {pieceInfo: PieceType::None}};
+            
+            
+        }
+    }
+    /* Initial board */
+    (iterate _chessBoard where rank == 6 || rank == 1).piece.pieceInfo = PieceType::Pawn;
+    (iterate _chessBoard where rank == 0 || rank == 1).piece.color = "b";
+    (iterate _chessBoard where rank == 7 || rank == 6).piece.color = "w";
+    (iterate _chessBoard where (rank == 7 || rank==0) && (file==0 || file == 7)).piece.pieceInfo = PieceType::Rook;
+    (iterate _chessBoard where (rank == 7 || rank==0) && (file==1 || file == 6)).piece.pieceInfo = PieceType::Knight;
+    (iterate _chessBoard where (rank == 7 || rank==0) && (file==2 || file == 5)).piece.pieceInfo = PieceType::Bishop;
+    (iterate _chessBoard where (rank == 7 || rank==0) && (file == 3 )).piece.pieceInfo = PieceType::Queen;
+    (iterate _chessBoard where (rank == 7 || rank==0) && (file == 4)).piece.pieceInfo = PieceType::King;
+
+}
+message playerSquare {
+    int fromRank;
+    int toRank;
+
+    int fromFile;
+    int toFile;
+
+}
+
+function posToIndex(int file, int rank) -> int {
+    return rank * 8 + file;
+}
+
+
+public string lastMove;
+channel movePiece(playerSquare moveThing) {
+    
+        bool twice = false;
+        int checks = 0;
+        if ((iterate _chessBoard where rank == moveThing.fromRank && file == moveThing.fromFile)[0] as fromSquare) {
+            if ((iterate _chessBoard where rank == moveThing.toRank && file == moveThing.toFile)[0] as toSquare) {
+                /* First check if can move by rules */
+                Piece fromPiece = fromSquare.piece;
+                int fromRow = moveThing.fromRank;
+                int fromCol = moveThing.fromFile;
+                int toRow = moveThing.toRank;
+                int toCol = moveThing.toFile;
+                if (fromPiece.pieceInfo == PieceType::Pawn) {
+                    if (moveThing.toFile !== moveThing.fromFile) {
+                        return;
+                    }
+
+                    if (fromPiece.twice && (moveThing.toRank == moveThing.fromRank + 2)) {
+                        checks++;
+                        twice = true;
+                        canTakeFromEnPassant = false;
+                    } else {
+                        if (moveThing.toRank == moveThing.fromRank + 1) {
+                            checks++;
+                        }
+
+                    }
+                }  else  {
+                        if (fromPiece.pieceInfo == PieceType::Knight) {
+                            int firstPos = posToIndex(moveThing.toFile, moveThing.toRank);
+                            int secondPos = posToIndex(moveThing.fromFile, moveThing.fromRank);
+                            int difference = firstPos - secondPos;
+                            difference = Math.abs(difference);
+                            if (difference == 6 || difference == 10 || difference == 15 || difference == 17) {
+                                checks++;
+                            }
+                    } else {
+                        if (fromSquare.piece.pieceInfo == PieceType::Rook) {
+                            if (toRow == fromRow || fromCol == toCol) {
+                                checks++;
+                            }
+                        }
+                    }
+                }
+                /* next check if square is empty, add for castling */
+                if (toSquare.piece.pieceInfo == PieceType::None) {
+                    
+                    checks += 2;
+                }
+                /* check if king is in danger if it moves */
+
+                if (checks == 3) {
+                    lastMove = "" + moveThing.fromRank + "" + moveThing.fromFile + " " + moveThing.toRank + "" + moveThing.toFile ;
+                    (iterate _chessBoard where rank == moveThing.toRank && file == moveThing.toFile).piece.pieceInfo = fromPiece.pieceInfo;
+                    (iterate _chessBoard where rank == moveThing.fromRank && file == moveThing.fromFile).piece.pieceInfo = PieceType::None;
+                }
+                
+            } 
+        } 
+        
+        
+    
+} 
+/*
+function tryMove(fromFile, fromRank, toFile, toRank) {
+     for now, don't worry if king is in check after move
+    PieceType typeOfPiece;
+    int fromRow;
+    int fromColumn;
+}
+*/
+@connected {
+    if (playerW == @no_one) {
+        if (playerW == @who) {
+            return true;
+        }
+        playerW = @who;
+        return true;
+    }
+    if (playerB == @no_one) {
+        if (playerB == @who) {
+            return true;
+        }
+        playerB = @who;
+        
+        return true;
+    }
+    return true;
+}
+
+@disconnected {
+    if (playerW == @who || playerB == @who) {
+        Document.destroy();
+    }
+}

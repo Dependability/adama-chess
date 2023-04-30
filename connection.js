@@ -1,11 +1,69 @@
-/*
-    May need to change code to reflect the following:
-        The user should join and either make a new game, or join an existing game.
-        When the player makes a move, check with the server to see if it is valid,
-        if it is, then do the move and switch ON SERVER
-        Only enable movement if it is the user's turn
 
-// */
+const button = document.querySelector('.game-container');
+const connection = new Adama.Connection(Adama.Production)
+var tree = new AdamaTree();
+
+
+
+function visualMove (move) {
+    if (move == "") {
+        return;
+    }
+    const [fromPos, toPos] = move.split(" ");
+    movePiece(fromPos, toPos);
+    console.log(move)
+}
+
+function subscribeToTree() {
+    tree.subscribe({lastMove: visualMove})
+}
+let docConnect;
+connection.start();
+connection.wait_connected().then((result) => {
+    console.log(result);
+    connection.DocumentCreate("anonymous:alice","chess","first",null,{}, {
+        success: function() {
+            console.log("Document!")
+            subscribeToTree();
+            connectToTree();
+            
+        },
+        failure: function(reason, more) {
+            console.log(reason)
+            if (reason == 667658 || reason == 130092) {
+                subscribeToTree();
+                connectToTree(true);
+            }
+        }
+    })
+
+    
+}, (err)=> {
+    console.log(err)
+})
+
+function connectToTree(person = false) {
+    docConnect = connection.ConnectionCreate(person ? "anonymous:seyi" : "anonymous:alice", "chess", "first", {}, {
+        next: function(payload) {
+            console.log(payload)
+            if (payload['delta']) {
+                const delta = payload.delta
+                if ('data' in delta) {
+                    tree.update(delta.data);
+                }
+            }
+            
+        },
+        complete: function() {
+            console.log("Data complete")
+        },
+        failure: function(reason) {
+            console.log(reason)
+        }
+    }) 
+}
+
+
 
 const gameContainer = document.querySelector(".game-container")
 const letterMap = ["a","b","c","d","e","f","g","h"]
@@ -14,11 +72,11 @@ let selectedPiece = null;
 let currentPlayer = 'w';
 let gameState = 'start';
 
-for (let row = 8; row >= 1; row--) {
+for (let row = 0; row < 8; row++) {
     const rowArr = []
     for (let column = 0; column < 8; column++) {
         const cell = document.createElement('div')
-        cell.setAttribute('square', letterMap[column] + row)
+        cell.setAttribute('square', letterMap[column] + (8 - row))
         cell.classList.add('cell')
         if (row % 2 == 0) {
             if (column % 2 == 1) {
@@ -33,41 +91,28 @@ for (let row = 8; row >= 1; row--) {
         cell.addEventListener('click', (e)=> {
             const cellPos = e.currentTarget.getAttribute('square')
             const file = cellPos.charCodeAt(0) - 97
-            const rank = 8 - +cellPos[1]
+            const rank = 8 -    +cellPos[1]
             const squareInfo = gameBoard[rank][file] 
             
             if (squareInfo[0] == currentPlayer && selectedPiece == null)  {
-                selectedPiece = {piece: squareInfo.substring(1), square: cellPos}
+                selectedPiece = {piece: squareInfo.substring(1), square: [file ,rank]}
                 console.log(selectedPiece)
                 return
             }
-            if (selectedPiece) {
-                // If square chosen has  piece
-                // validate move if square is not player's square (Unless castle*)
-                if (squareInfo[0] !== currentPlayer ) {
-                    //start game if this is first move
-                    if (gameState == 'start') {
-                        gameState = 'play'
-                        
-                    }
-                    movePiece(selectedPiece.square, cellPos)
-                    switchTurn()
-                    // if (squareInfo == "None") {
-                    //     console.log(currentPlayer, "wants the",selectedPiece.piece, "on", selectedPiece.square, "to move to", cellPos)
-                    //     movePiece(selectedPiece.square, cellPos)
-                    // } else {
-                    //     console.log(currentPlayer, "wants the",selectedPiece.piece, "on", selectedPiece.square, "to take the", squareInfo.substring(1), 'on', cellPos)
-                    //     movePiece(selectedPiece.square, cellPos)
-                    // }
-                }  else {
-                    console.log("That is your piece!")
-                }
-                
-                selectedPiece = null
-                
 
+            if (selectedPiece) {
+                console.log(selectedPiece.square)
+                console.log([file, rank])
+                docConnect.send('movePiece', {fromFile: selectedPiece.square[0], fromRank: +selectedPiece.square[1], toFile: file, toRank: rank}, {
+                    success: function() {},
+                    failure: function(why) {console.log(why)}
+                })
+                selectedPiece = null;
             }
-        })
+
+            
+        });
+
         gameContainer.appendChild(cell)
     }
     gameBoard.push(rowArr)
@@ -102,7 +147,6 @@ function drawBoard() {
         "wKing": './assets/king_l.png',
         "wPawn": './assets/pawn_l.png',
     }
-    const letterMap = ["h","g","f","e","d","c","b","a"]
     for (let row = 0; row < 8; row++) {
         for (let column = 0; column < 8; column++) {
             const square = gameBoard[row][column];
@@ -112,6 +156,7 @@ function drawBoard() {
                 const image = document.createElement('img');
                 image.src = pieceMap[square]
                 pieceDiv.appendChild(image)
+                console.log(`[square=${letterMap[column]}${8 - row}]`)
                 gameContainer.querySelector(`[square=${letterMap[column]}${8 - row}]`).appendChild(pieceDiv)
             }
 
@@ -119,23 +164,35 @@ function drawBoard() {
     }
 }
 
+function sendMoveToServer() {
+    docConnect.send('movePiece', {fromRank, fromFile, toRank, toFile}, {
+        success: function() {},
+        failure: function(why) {console.log(why)}
+    })
+}
+
 function movePiece(from, to, castle=false) {
     
     // Implement keeping track of gained pieces
-
-    const fromRank = 8 - +from[1]
-    const fromFile = from.charCodeAt(0) - 97
-    const toRank = 8 - +to[1]
-    const toFile = to.charCodeAt(0) - 97
+    const fromRank = +from[0]
+    const fromFile = +from[1]
+    const toRank = +to[0]
+    const toFile = +to[1]
+    console.log(fromRank)
+    
     const fromPiece = gameBoard[fromRank][fromFile]
     const toPiece = gameBoard[toRank][toFile]
+    console.log(fromRank, fromFile, toRank, toFile)
 
     //Move square from old to empty
     gameBoard[toRank][toFile] = fromPiece
     gameBoard[fromRank][fromFile] = "None"
-    const oldPiece = gameContainer.querySelector(`[square=${from}] div`)
-    gameContainer.querySelector(`[square=${to}]`).innerHTML = ''
-    gameContainer.querySelector(`[square=${to}]`).appendChild(oldPiece)
+    const fromName = String.fromCharCode(fromFile + 97) + Math.abs(8 - fromRank);
+    const toName = String.fromCharCode(toFile + 97) + Math.abs(8 - toRank);
+    const oldPiece = gameContainer.querySelector(`[square=${fromName}] div`)
+    gameContainer.querySelector(`[square=${toName}]`).innerHTML = ''
+    gameContainer.querySelector(`[square=${toName}]`).appendChild(oldPiece)
+    
 }
 
 function switchTurn() {
