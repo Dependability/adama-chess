@@ -3,7 +3,12 @@ const button = document.querySelector('.game-container');
 const connection = new Adama.Connection(Adama.Production)
 var tree = new AdamaTree();
 
-
+const gameContainer = document.querySelector(".game-container")
+const letterMap = ["a","b","c","d","e","f","g","h"]
+const gameBoard = []
+let selectedPiece = null;
+let currentPlayer = 'w';
+let gameState = 'start';
 
 function visualMove (move) {
     if (move == "") {
@@ -42,7 +47,17 @@ connection.wait_connected().then((result) => {
     console.log(err)
 })
 
+const header = document.querySelector('.top');
+const h1 = header.querySelector('h1') 
 function connectToTree(person = false) {
+    currentPlayer = person ? "d" : "w"; 
+    if (person) {
+        header.classList.add('black')
+        h1.textContent = "Black";
+    } else {
+        header.classList.add('white');
+        h1.textContent = "White";
+    }
     docConnect = connection.ConnectionCreate(person ? "anonymous:seyi" : "anonymous:alice", "chess", "first", {}, {
         next: function(payload) {
             console.log(payload)
@@ -65,12 +80,7 @@ function connectToTree(person = false) {
 
 
 
-const gameContainer = document.querySelector(".game-container")
-const letterMap = ["a","b","c","d","e","f","g","h"]
-const gameBoard = []
-let selectedPiece = null;
-let currentPlayer = 'w';
-let gameState = 'start';
+
 
 for (let row = 0; row < 8; row++) {
     const rowArr = []
@@ -192,18 +202,8 @@ function movePiece(from, to, castle=false) {
     const oldPiece = gameContainer.querySelector(`[square=${fromName}] div`)
     gameContainer.querySelector(`[square=${toName}]`).innerHTML = ''
     gameContainer.querySelector(`[square=${toName}]`).appendChild(oldPiece)
-    
 }
 
-function switchTurn() {
-    //check if player won, draw, or resign
-    // if so change game state
 
-    currentPlayer = currentPlayer == 'd' ? 'w' : 'd';
-    // switch timer
-    
-
-
-}
 initializeGame()
 

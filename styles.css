@@ -4,6 +4,8 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
+    flex-direction: column;
+    gap: 20px;
 }
 .game-container {
     width: 480px;
@@ -22,6 +24,18 @@ body {
     display: flex
 }
 
+.top h1 {
+    padding: 0 20px;
+    font-size: 64px;
+}
+.top.black {
+    background-color: rgba(0,0,0,.2);
+}
+
+.top.white {
+    background: rgba(0,0,0,.8);
+    color: white
+}
 .game-container .cell div {
     flex:1;
     display: flex;

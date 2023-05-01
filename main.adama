@@ -11,26 +11,44 @@ public string currentPlayer = "w";
 
 
 enum PieceType {
+    None,
     Pawn,
     Knight,
     Bishop,
     Rook,
     Queen,
     King,
-    None
+
 }
+
 record Piece {
     PieceType pieceInfo;
-    string color;
+    string color = "n";
     bool twice = true;
     bool canCastle = false;
     bool canTakeFromEnPassant = false;
+    method resetPiece() {
+        pieceInfo = PieceType::None;
+        color = "n";
+        twice = true;
+        canCastle = false;
+        canTakeFromEnPassant = false;
+    }
+    method setPieceInfo(string _color, bool _twice, bool _canCastle, bool _canTakeFromEnPessant, PieceType _pieceInfo) {
+        pieceInfo = _pieceInfo;
+        color = _color;
+        twice = _twice;
+        canCastle = _canCastle;
+        canTakeFromEnPassant = _canTakeFromEnPessant;
+    }
+    
 
 }
 record BoardSquare {
     int rank;
     int file;
     Piece piece;
+
 }
 
 
@@ -70,20 +88,197 @@ function posToIndex(int file, int rank) -> int {
 }
 
 public string lastMove;
-public string somethingThere;
-public int checks;
-channel movePiece(playerSquare moveThing) {
-        somethingThere = "";
-        int multiplier = 1;
-        if (currentPlayer == "b") {
-            multiplier = -1;
+public string NONO;
+public int piecetype;
+/* Break up Valid Functions into seperate based on item */
+procedure isMoveValid( int fromRow, int fromCol, int toRow, int toCol, Piece fromPiece) -> bool {
+    int size = 0;
+    list<BoardSquare> inFront;
+    int multiplier = fromPiece.color == "b" ? -1 : 1;
+    NONO = ""+multiplier;
+    maybe<BoardSquare> fromSquare = (iterate _chessBoard where rank == fromRow && file == fromCol limit 1)[0];
+    if (fromPiece.pieceInfo == PieceType::Pawn) {
+        
+        if (toCol != fromCol) {
+            /* Check if can take diagonals */
+            if( (fromCol + 1 == toCol && fromRow - multiplier == toRow )||  (fromCol - 1 == toCol && fromRow - multiplier == toRow)) {
+                return true;
+            }
+            return false;
         }
+        
+        /*Find first item in front */
+        if (multiplier == 1) {
+            inFront = iterate _chessBoard where (rank < fromRow && file == fromCol && piece.pieceInfo != PieceType::None) order by rank desc limit 1;
+        } else {
+            inFront = iterate _chessBoard where (rank > fromRow && file == fromCol && piece.pieceInfo != PieceType::None) order by rank asc limit 1;
+        }
+        size = inFront.size();
+        if (size == 1)  {
+            if (inFront[0] as frontItem) {
+                if (multiplier == 1) {
+                    if (toRow <= frontItem.rank) {
+                        return false;
+                    }
+                } else {
+                    if (toRow >= frontItem.rank) {
+                        return false;
+                    }
+                }
+            }
+        }
+        
+        /* Pawns have interesting properties, so it would be important to update it when they use their properties */
+        if (fromPiece.twice && (toRow == fromRow - (multiplier * 2))) {
+            return true;
+        } else {
+            if (toRow == fromRow - (multiplier)) {
+                return true;
+            } else {
+                return false;
+            }
+
+        }
+    }
+    /* Knight has specific pattern, and it does not matter for color */
+    if (fromPiece.pieceInfo == PieceType::Knight) {
+        int firstPos = posToIndex(toCol, toRow);
+        int secondPos = posToIndex(fromCol, fromRow);
+        int difference = firstPos - secondPos;
+        difference = Math.abs(difference);
+        if (difference == 6 || difference == 10 || difference == 15 || difference == 17) {
+            return true;
+        }
+    }
+    if (fromPiece.pieceInfo == PieceType::Rook || fromPiece.pieceInfo == PieceType::Queen || fromPiece.pieceInfo == PieceType::Bishop) {
+        if ((toRow == fromRow || fromCol == toCol) && (fromPiece.pieceInfo == PieceType::Rook || fromPiece.pieceInfo == PieceType::Queen)) {
+            
+            /* Check the row */
+            if (toRow == fromRow) {
+                
+                    /* check right */
+                    if (toCol > fromCol) {
+                        
+                        inFront = (iterate _chessBoard where ((toRow == rank) && (file > fromCol) && (piece.pieceInfo != PieceType::None)) order by file asc limit 1);
+                        if (inFront[0] as frontItem) {
+                            if (toCol > frontItem.file) {
+                                piecetype = frontItem.file;
+                                return false;
+                            }
+                        }
+                        
+                    /* check left */
+                    } else {
+                        inFront = iterate _chessBoard where (toRow == rank && file < fromCol && piece.pieceInfo != PieceType::None) order by file desc limit 1;
+                        if (inFront[0] as frontItem) {
+                            if (toCol < frontItem.file) {
+                                return false;
+                            }
+                        }
+                    } 
+            } else {
+                    /* check top */
+                    if (toRow < fromRow) {
+                        inFront = iterate _chessBoard where (toCol == file && rank < fromRow && piece.pieceInfo != PieceType::None) order by rank desc limit 1;
+                        
+                        if (inFront[0] as frontItem) {
+                            if (toRow < frontItem.rank) {
+                                return false;
+                            }
+                        }
+                    } else {
+                    /* check bottom */
+                    inFront = iterate _chessBoard where (toCol == file && rank > fromRow && piece.pieceInfo != PieceType::None) order by rank asc limit 1;
+                    if (inFront[0] as frontItem) {
+                        if (toRow > frontItem.rank) {
+                            return false;
+                        }
+                    }
+                    }
+            }
+            /* TODO: Check if it is a king and just go to next step,
+                would need to take out bishop check from the else if */
+            return true;
+
+        } else {
+            if (fromPiece.pieceInfo == PieceType::Bishop || fromPiece.pieceInfo == PieceType::Queen) {
+        /* Get the diagonals */
+        bool bishopValid = (Math.abs(fromRow - toRow) == Math.abs(fromCol - toCol)); 
+        if (bishopValid == false) {
+            return false;
+        }
+        
+        int searchAttempt = 1;  
+        int difBetween = Math.abs(toRow - fromRow);
+        while (searchAttempt < difBetween) {
+            if ((iterate _chessBoard where toRow - searchAttempt == rank && toCol - searchAttempt == file && piece.pieceInfo != PieceType::None)[0] as _foundThing) {
+                if (posToIndex(fromCol, fromRow) == posToIndex(_foundThing.file- (difBetween - searchAttempt), _foundThing.rank- (difBetween - searchAttempt))) {
+                    
+                    return false;
+                }
+            }     
+            if ((iterate _chessBoard where toRow + searchAttempt == rank && toCol + searchAttempt == file && piece.pieceInfo != PieceType::None)[0] as _foundThing) {
+                if (posToIndex(fromCol, fromRow) == posToIndex(_foundThing.file+ (difBetween - searchAttempt), _foundThing.rank+ (difBetween - searchAttempt))) {
+                    return false;
+                }
+            }
+            if ((iterate _chessBoard where toRow - searchAttempt == rank && toCol + searchAttempt == file && piece.pieceInfo != PieceType::None)[0] as _foundThing) {
+                if (posToIndex(fromCol, fromRow) == posToIndex(_foundThing.file+ (difBetween - searchAttempt), _foundThing.rank- (difBetween - searchAttempt))) {
+                    return false;
+                }
+            }
+            if ((iterate _chessBoard where toRow + searchAttempt == rank && toCol - searchAttempt == file && piece.pieceInfo != PieceType::None)[0] as _foundThing) {
+                if (posToIndex(fromCol, fromRow) == posToIndex(_foundThing.file- (difBetween - searchAttempt), _foundThing.rank+ (difBetween - searchAttempt))) {
+                    return false;
+                }
+            }
+            
+            searchAttempt++;
+        } 
+
+            
+        return true;
+        
+
+    }
+        }
+        
+    } 
+    if (fromPiece.pieceInfo == PieceType::King) {
+        /* Check diagonals */
+        bool diagonalCheck = (fromCol + 1 == toCol && fromRow + 1 == toRow) || (fromCol - 1 == toCol && fromRow -1 == toRow) || (fromCol - 1 == toCol && fromRow + 1 == toRow) || (fromCol + 1 == toCol  && fromRow - 1 == toRow);
+        bool adjacentCheck = (fromCol + 1 == toCol && fromRow == toRow) || (fromCol - 1 == toCol && fromRow == toRow) || (fromCol == toCol && fromRow + 1 == toRow) || (fromCol == toCol && fromRow - 1 == toRow);
+        if (diagonalCheck || adjacentCheck) {
+            return true;
+        } else {
+            return false;
+        }
+
+    }
+    return false;
+    
+
+}
+
+
+procedure reset_piece(int row, int col) {
+
+    if ((iterate _chessBoard where rank == row && file == col)[0] as square){
+        square.piece.resetPiece();
+    }
+}
+
+public int checks;
+channel<playerSquare> movePiece;
+
+procedure validateMove(playerSquare moveThing) -> bool {
+        NONO = "";
+        int multiplier = currentPlayer == "b" ? -1 : 1;
         bool twice = false;
         bool canTakeFromEnPassant = false;
+        string currentPlayerColor = currentPlayer;
         checks = 0;
-        int size = 0;
-        list<BoardSquare> inFront;
-        if ((iterate _chessBoard where rank == moveThing.fromRank && file == moveThing.fromFile)[0] as fromSquare) {
+        if ((iterate _chessBoard where rank == moveThing.fromRank && file == moveThing.fromFile && currentPlayerColor == piece.color)[0] as fromSquare) {
             if ((iterate _chessBoard where rank == moveThing.toRank && file == moveThing.toFile)[0] as toSquare) {
                 /* First check if can move by rules */
                 Piece fromPiece = fromSquare.piece;
@@ -91,213 +286,159 @@ channel movePiece(playerSquare moveThing) {
                 int fromCol = moveThing.fromFile;
                 int toRow = moveThing.toRank;
                 int toCol = moveThing.toFile;
+                if (fromRow == toRow && toCol == fromCol) {
+                    NONO = "SAME";
+                    return false;
+                }
                 
-                if (fromPiece.pieceInfo == PieceType::Pawn) {
-                    if (toCol != fromCol) {
-                        return;
-                    }
-                    /*Find first item in front */
-                    if (multiplier == 1) {
-                        inFront = iterate _chessBoard where (rank < fromRow && file == fromCol && piece.pieceInfo != PieceType::None) order by rank desc limit 1;
-                    } else {
-                        inFront = iterate _chessBoard where (rank > fromRow && file == fromCol && piece.pieceInfo != PieceType::None) order by rank asc limit 1;
-                    }
-                    size = inFront.size();
-                    if (size == 1)  {
-                        if (inFront[0] as frontItem) {
-                            if (multiplier == 1) {
-                                if (toRow < frontItem.rank) {
-                                    return;
-                                }
-                            } else {
-                                if (toRow < frontItem.rank) {
-                                    return;
-                                }
-                            }
-                        }
-                    }
-
-                    if (fromPiece.twice && (toRow == fromRow - (multiplier * 2))) {
-                        checks++;
-                        twice = true;
-                        canTakeFromEnPassant = true;
-                    } else {
-                        if (toRow == fromRow - (multiplier)) {
-                            checks++;
-                        }
-
-                    }
-                }   else  {
-                        if (fromPiece.pieceInfo == PieceType::Knight) {
-                            int firstPos = posToIndex(moveThing.toFile, moveThing.toRank);
-                            int secondPos = posToIndex(moveThing.fromFile, moveThing.fromRank);
-                            int difference = firstPos - secondPos;
-                            difference = Math.abs(difference);
-                            if (difference == 6 || difference == 10 || difference == 15 || difference == 17) {
-                                checks++;
-                           }
-                    } else {
-                        if (fromPiece.pieceInfo == PieceType::Rook) {
-                            if (toRow == fromRow || fromCol == toCol) {
-                                
-                            
-                                /* Check the row */
-                                if (toRow == fromRow) {
-                                    if (multiplier == 1) {
-                                        /* check right */
-                                        if (toCol > fromCol) {
-                                            inFront = iterate _chessBoard where (toRow == rank && file > fromCol && piece.pieceInfo != PieceType::None) order by file asc limit 1;
-                                            size = inFront.size();
-                                            if (inFront[0] as frontItem) {
-                                                if (toCol > frontItem.file) {
-                                                    return;
-                                                }
-                                            }
-                                            
-                                        /* check left */
-                                        } else {
-                                            inFront = iterate _chessBoard where (toRow == rank && file < fromCol && piece.pieceInfo != PieceType::None) order by file desc limit 1;
-                                            size = inFront.size();
-                                            if (inFront[0] as frontItem) {
-                                                if (toCol < frontItem.file) {
-                                                    return;
-                                                }
-                                            }
-                                        } 
-                                    } 
-                                } else {
-                                    if (multiplier == 1 ) {
-                                        if (toRow < fromRow) {
-                                            inFront = iterate _chessBoard where (toCol == file && rank < fromRow && piece.pieceInfo != PieceType::None) order by rank desc limit 1;
-                                            size = inFront.size();
-                                            if (inFront[0] as frontItem) {
-                                                if (toRow < frontItem.rank) {
-                                                    return;
-                                                }
-                                            }
-                                        } else {
-                                        inFront = iterate _chessBoard where (toCol == file && rank > fromRow && piece.pieceInfo != PieceType::None) order by rank asc limit 1;
-                                        size = inFront.size();
-                                        if (inFront[0] as frontItem) {
-                                            if (toRow > frontItem.rank) {
-                                                return;
-                                            }
-                                        }
-                                        }
-                                    } 
-                                }
-
-                                checks++;
-
-                            }
-                        } else {
-                            if (fromPiece.pieceInfo == PieceType::Bishop) {
-                                /* Get the diagonals */
-                                bool bishopValid;
-                                for (int i = 1; i < 8; i++) {
-                                    /* Combine all of these to get faster result */
-                                    list<BoardSquare> found = iterate _chessBoard where 
-                                                                        (fromRow  - i == rank && fromCol - i == file && rank == toRow && file == toCol) || 
-                                                                        (fromRow - i == rank && fromCol + i == file && rank == toRow && file == toCol) || 
-                                                                        (fromRow + i  == rank && fromCol + i == file && rank == toRow && file == toCol) || 
-                                                                        (fromRow + i == rank && fromCol - i == file && rank == toRow && file == toCol) limit 10;
-                                     
-                                    if (found[0] as foundItem) {
-                                        bishopValid = true;
-                                        break;
-                                       
-                                    }
-                                     
-
-                                }
-                                if (bishopValid == false) {
-                                    return;
-                                }
-                                
-                                int searchAttempt = 1;  
-                                int difBetween = Math.abs(toRow - fromRow);
-                                while (searchAttempt < difBetween) {
-                                    if ((iterate _chessBoard where toRow - searchAttempt == rank && toCol - searchAttempt == file && piece.pieceInfo != PieceType::None)[0] as _foundThing) {
-                                        if (posToIndex(fromCol, fromRow) == posToIndex(_foundThing.file- (difBetween - searchAttempt), _foundThing.rank- (difBetween - searchAttempt))) {
-                                            
-                                            return;
-                                        }
-                                    }     
-                                    
-                                    if ((iterate _chessBoard where toRow + searchAttempt == rank && toCol + searchAttempt == file && piece.pieceInfo != PieceType::None)[0] as _foundThing) {
-                                        if (posToIndex(fromCol, fromRow) == posToIndex(_foundThing.file+ (difBetween - searchAttempt), _foundThing.rank+ (difBetween - searchAttempt))) {
-                                            return;
-                                        }
-                                    }
-                                    if ((iterate _chessBoard where toRow - searchAttempt == rank && toCol + searchAttempt == file && piece.pieceInfo != PieceType::None)[0] as _foundThing) {
-                                        if (posToIndex(fromCol, fromRow) == posToIndex(_foundThing.file+ (difBetween - searchAttempt), _foundThing.rank- (difBetween - searchAttempt))) {
-                                            return;
-                                        }
-                                    }
-                                    if ((iterate _chessBoard where toRow + searchAttempt == rank && toCol - searchAttempt == file && piece.pieceInfo != PieceType::None)[0] as _foundThing) {
-                                        if (posToIndex(fromCol, fromRow) == posToIndex(_foundThing.file- (difBetween - searchAttempt), _foundThing.rank+ (difBetween - searchAttempt))) {
-                                            return;
-                                        }
-                                    }
-                                    
-                                    searchAttempt++;
-                                }
-
-                                    
-                                checks++;
-                                
-
-                            }
-                        }
-                    }
+                if ((isMoveValid(fromRow, fromCol, toRow, toCol, fromPiece))) {
+                    NONO = "Valid move!";
+                    checks++;
+                } else {
+                    return false;
                 }
-                /* next check if square is empty, add for castling */
+                
+                
+                /* next check if square is empty, add for castling, pawn takes, enpessant*/
+
                 if (toSquare.piece.pieceInfo == PieceType::None) {
-
-                    checks += 2;
+                    if (fromPiece.pieceInfo == PieceType::Pawn) {
+                        if ((fromCol + 1 == toCol && fromRow - multiplier == toRow )||  (fromCol - 1 == toCol && fromRow - multiplier == toRow)) {
+                            return false;
                 }
+                        
+                    }
+                } else {
+                    
+                    if (toSquare.piece.color == currentPlayer) {
+                        return false;
+                    }
+                }
+                checks++;
+                
+
                 /* check if king is in danger if it moves */
 
-                if (checks == 3) {
-                    lastMove = "" + moveThing.fromRank + "" + moveThing.fromFile + " " + moveThing.toRank + "" + moveThing.toFile ;
-                    (iterate _chessBoard where rank == moveThing.toRank && file == moveThing.toFile).piece.pieceInfo = fromPiece.pieceInfo;
-                    (iterate _chessBoard where rank == moveThing.fromRank && file == moveThing.fromFile).piece.pieceInfo = PieceType::None;
+                /* Find the king */
+                
+                if ((iterate _chessBoard where (piece.pieceInfo == PieceType::King && piece.color == currentPlayer) limit 1)[0] as kingSquare) {
+                    int kingRow = kingSquare.rank;
+                    int kingCol = kingSquare.file;
+                    string otherColor = currentPlayer == "b" ? "w" : "b";
+                    /* Probably more efficient way to do this but for now */
+                    string prevColor = toSquare.piece.color;
+                    bool prevTwice = toSquare.piece.twice;
+                    bool prevCastle = toSquare.piece.canCastle;
+                    bool prevPassant = toSquare.piece.canTakeFromEnPassant;
+                    PieceType prevType = toSquare.piece.pieceInfo;
+
+                    /* Set piece to the spot */
+                    toSquare.piece.setPieceInfo(fromPiece.color, fromPiece.twice, fromPiece.canCastle, fromPiece.canTakeFromEnPassant, fromPiece.pieceInfo);
+                    fromSquare.piece.resetPiece();
+                   
                     
+                    bool valid = true;
+                    for (int i = 0; i < 8; i++) {
+                        for (int j = 0; j < 8; j++) {
+                            if ((iterate _chessBoard where (piece.color == otherColor) && rank == i && file == j)[0] as chessPiece) {
+                                if (isMoveValid(chessPiece.rank, chessPiece.file, kingRow, kingCol, chessPiece.piece)) {
+                                    NONO = ""+chessPiece.file + chessPiece.rank;
+                                    valid = false;
+                                    break;
+                                    
+                                }
+                                
+                            }
+                        }
+                        if (valid == false) {
+                            break;
+                        }
+                    }
+                    
+                        /* Set piece back */
+                    fromSquare.piece.setPieceInfo(toSquare.piece.color, toSquare.piece.twice, toSquare.piece.canCastle, toSquare.piece.canTakeFromEnPassant, toSquare.piece.pieceInfo);
+                    toSquare.piece.setPieceInfo(prevColor, prevTwice, prevCastle, prevPassant, prevType);
+                        
+                    if (valid == false) {
+                        return false;
+                    }
+                    checks++;
+                    
+                }
+
+
+                if (checks == 3) {
+
+                    /* Update piece if certain condition */
+                    if (fromPiece.pieceInfo == PieceType::Pawn) {
+                        fromPiece.canTakeFromEnPassant = false;
+                        if (fromPiece.twice) {
+                            fromPiece.twice = false;
+                            if (Math.abs(fromRow - toRow) == 2) {
+                                fromPiece.canTakeFromEnPassant = true;
+                            }
+                        }
+                        
+                    }
+                    lastMove = "" + fromRow + "" + fromCol + " " + toRow + "" + toCol;
+                    toSquare.piece.setPieceInfo(fromPiece.color, fromPiece.twice, fromPiece.canCastle, fromPiece.canTakeFromEnPassant, fromPiece.pieceInfo);
+                    reset_piece(fromRow, fromCol);
+
+
+                    return true;
+                    
+                } else {
+                    return false;
                 }
                 
             } 
-        } 
+        }
+        return false; 
         
         
     
 } 
 
-/* Break up Valid Functions into seperate based on item */
-
-/*
-function tryMove(fromFile, fromRank, toFile, toRank) {
-     for now, don't worry if king is in check after move
-    PieceType typeOfPiece;
-    int fromRow;
-    int fromColumn;
+#start {
+    transition #turn;
 }
-*/
+
+#turn {
+    /* Soon change so that it must be from a certain list of the possible locations */
+    future<playerSquare> chosenSquare = movePiece.fetch(currentPlayer == "w" ? playerW : playerB);
+    playerSquare squareUnwrapped = chosenSquare.await();
+    
+    if (validateMove(squareUnwrapped)) {
+        currentPlayer = currentPlayer == "w" ? "b" : "w";
+    }
+
+    transition #turn;
+
+}
+
+#end {
+
+
+}
+
 @connected {
+    
+    
     if (playerW == @no_one) {
-        if (playerW == @who) {
-            return true;
-        }
         playerW = @who;
+        if (playerB != @no_one) {
+            transition #start;
+        }
         return true;
     }
     if (playerB == @no_one) {
-        if (playerB == @who) {
-            return true;
-        }
         playerB = @who;
-        
+        if (playerW != @no_one) {
+            transition #start;
+        }
         return true;
     }
+
     return true;
 }
 
