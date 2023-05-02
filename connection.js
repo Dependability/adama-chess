@@ -58,7 +58,7 @@ function visualMove (move) {
 
 function subscribeToTree() {
     tree.subscribe({lastMove: visualMove, playerColor: (color)=>{currentPlayer = color;console.log(color)}, currentPlayer: (player)=>{ 
-        playerTurn=player;
+        playerTurn= player == 'w' ? 'w' : 'd';
         if (whiteTurn == undefined) {
             return;
         } 
@@ -158,13 +158,15 @@ function createBoard() {
                 const rank = 8 -    +cellPos[1]
                 const squareInfo = gameBoard[rank][file] 
                 
-                if (squareInfo[0] == currentPlayer && selectedPiece == null)  {
-                    selectedPiece = {piece: squareInfo.substring(1), square: [file ,rank]}
+                if (squareInfo[0] == currentPlayer && selectedPiece == null && currentPlayer == playerTurn)  {
+                    e.currentTarget.classList.add('selected');
+                    selectedPiece = {piece: squareInfo.substring(1), square: [file ,rank], piece:e.currentTarget}
                     console.log(selectedPiece)
                     return
                 }
 
                 if (selectedPiece) {
+                    selectedPiece.piece.classList.remove('selected');
                     console.log(selectedPiece.square)
                     console.log([file, rank])
                     docConnect.send('movePiece', {fromFile: selectedPiece.square[0], fromRank: +selectedPiece.square[1], toFile: file, toRank: rank}, {
@@ -219,6 +221,7 @@ function drawBoard() {
                 const pieceDiv = document.createElement('div')
                 const image = document.createElement('img');
                 image.src = pieceMap[square]
+                image.setAttribute('draggable', false);
                 pieceDiv.appendChild(image)
                 gameContainer.querySelector(`[square=${letterMap[column]}${8 - row}]`).appendChild(pieceDiv)
             }

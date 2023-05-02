@@ -6,13 +6,15 @@
     font-family: "Nanum Myeongjo", serif;
 }
 body {
+    width: 100vw;
     height: 100vh;
     margin: 0;
+    display: flex;
     
     
 }
 .main-game, .start-page {
-    height: 100%;
+    width: 100%;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -23,6 +25,7 @@ body {
 
 .start-page h1{
     font-size: 72px;
+    text-align: center;
     
 }
 
@@ -46,8 +49,8 @@ body {
 }
 
 .game-container {
-    width: 480px;
-    height: 480px;
+    width: 70vh;
+    height: 70vh;
     border: 2px black solid;
     display: grid;
     grid-template-columns: repeat(8, 1fr);
@@ -57,6 +60,9 @@ body {
     background-color: rgb(179, 163, 163);
 }
 
+.game-container .cell.selected {
+    background-color: lightskyblue;
+}
 .game-container .cell {
     display: flex
 }
@@ -80,6 +86,7 @@ body {
 
 .game-container .cell div img{
     flex: 1;
+    max-width: 100%;
 }
 
 .hidden {
@@ -103,3 +110,24 @@ body {
     background-color: rgba(0,0,0,.9);
 }
 
+.close {
+    position: fixed;
+    top: 0;
+    left: 0;
+}
+
+@media screen and (max-width:500px) {
+    body {
+        width: 100vw;
+        height: 100vh;
+    }
+
+    .start-page {
+        width: 100vw;
+    }
+    .game-container {
+        width: 90vw;
+        height: 90vw;
+
+    }
+}
