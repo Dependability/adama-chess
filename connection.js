@@ -3,11 +3,49 @@ const button = document.querySelector('.game-container');
 const connection = new Adama.Connection(Adama.Production)
 var tree = new AdamaTree();
 
-const gameContainer = document.querySelector(".game-container")
+const gameContainer = document.querySelector(".game-container");
+const mainGame = document.querySelector('.main-game');
+const startPage = document.querySelector('.start-page');
+const loading = document.querySelector('.loading');
+let docConnect;
+let whiteTurn;
+let blackTurn;
+let user;
+connection.start();
+connection.wait_connected().then((result) => {
+    console.log(result);
+}, (err)=> {
+    console.log(err)
+})
+
+startPage.querySelector('button').addEventListener('click', ()=> {
+    startPage.classList.add('hidden');
+    mainGame.classList.remove('hidden');
+    user = document.querySelector('input').value;
+    connection.DocumentCreate(user,"chess","first",null,{}, {
+        success: function(anything) {
+            console.log(anything)
+            subscribeToTree();
+            connectToTree(user);
+            
+        },
+        failure: function(reason) {
+            if (reason == 667658 || reason == 130092) {
+                subscribeToTree();
+                connectToTree(user);
+            }
+        }
+    })
+
+})
+
+
 const letterMap = ["a","b","c","d","e","f","g","h"]
 const gameBoard = []
 let selectedPiece = null;
-let currentPlayer = 'w';
+let playerTurn;
+let currentPlayer = 'd';
+let updateThing = document.querySelector(".lastPos");
 let gameState = 'start';
 
 function visualMove (move) {
@@ -16,49 +54,42 @@ function visualMove (move) {
     }
     const [fromPos, toPos] = move.split(" ");
     movePiece(fromPos, toPos);
-    console.log(move)
 }
 
 function subscribeToTree() {
-    tree.subscribe({lastMove: visualMove})
-}
-let docConnect;
-connection.start();
-connection.wait_connected().then((result) => {
-    console.log(result);
-    connection.DocumentCreate("anonymous:alice","chess","first",null,{}, {
-        success: function() {
-            console.log("Document!")
-            subscribeToTree();
-            connectToTree();
-            
-        },
-        failure: function(reason, more) {
-            console.log(reason)
-            if (reason == 667658 || reason == 130092) {
-                subscribeToTree();
-                connectToTree(true);
-            }
+    tree.subscribe({lastMove: visualMove, playerColor: (color)=>{currentPlayer = color;console.log(color)}, currentPlayer: (player)=>{ 
+        playerTurn=player;
+        if (whiteTurn == undefined) {
+            return;
+        } 
+        if (playerTurn == 'w') {
+            whiteTurn.classList.add('selected');
+            blackTurn.classList.remove('selected');
+        } else {
+            blackTurn.classList.add('selected');
+            whiteTurn.classList.remove('selected');
         }
-    })
 
-    
-}, (err)=> {
-    console.log(err)
-})
+        
+    }, gameState: (state)=>{
+        if (state == 'waiting') {
+            loading.classList.remove('hidden');
+        }
+        if (state == 'game') {
+            loading.classList.add('hidden');
+            gameContainer.classList.remove('hidden');
+            mainGame.classList.remove('hidden');
+            console.log(currentPlayer)
+            // resetBoard();
+            createBoard();
+            initializeGame();
+        }
+    }})
+}
 
-const header = document.querySelector('.top');
-const h1 = header.querySelector('h1') 
-function connectToTree(person = false) {
-    currentPlayer = person ? "d" : "w"; 
-    if (person) {
-        header.classList.add('black')
-        h1.textContent = "Black";
-    } else {
-        header.classList.add('white');
-        h1.textContent = "White";
-    }
-    docConnect = connection.ConnectionCreate(person ? "anonymous:seyi" : "anonymous:alice", "chess", "first", {}, {
+
+function connectToTree(person) {
+    docConnect = connection.ConnectionCreate(person, "chess", "first", {}, {
         next: function(payload) {
             console.log(payload)
             if (payload['delta']) {
@@ -81,51 +112,75 @@ function connectToTree(person = false) {
 
 
 
+function createBoard() {
+    const topTurn = document.querySelectorAll('.turn')[0]
+    const bottomTurn = document.querySelectorAll('.turn')[1]
+    if (currentPlayer == 'd') {
+        whiteTurn = topTurn; 
+        blackTurn = bottomTurn;
+        
 
-for (let row = 0; row < 8; row++) {
-    const rowArr = []
-    for (let column = 0; column < 8; column++) {
-        const cell = document.createElement('div')
-        cell.setAttribute('square', letterMap[column] + (8 - row))
-        cell.classList.add('cell')
-        if (row % 2 == 0) {
-            if (column % 2 == 1) {
-                cell.classList.add('black')
-            }
-        } else {
-            if (column % 2 == 0) {
-                cell.classList.add('black')
-            }
-        }
-        rowArr.push("None")
-        cell.addEventListener('click', (e)=> {
-            const cellPos = e.currentTarget.getAttribute('square')
-            const file = cellPos.charCodeAt(0) - 97
-            const rank = 8 -    +cellPos[1]
-            const squareInfo = gameBoard[rank][file] 
-            
-            if (squareInfo[0] == currentPlayer && selectedPiece == null)  {
-                selectedPiece = {piece: squareInfo.substring(1), square: [file ,rank]}
-                console.log(selectedPiece)
-                return
-            }
-
-            if (selectedPiece) {
-                console.log(selectedPiece.square)
-                console.log([file, rank])
-                docConnect.send('movePiece', {fromFile: selectedPiece.square[0], fromRank: +selectedPiece.square[1], toFile: file, toRank: rank}, {
-                    success: function() {},
-                    failure: function(why) {console.log(why)}
-                })
-                selectedPiece = null;
-            }
-
-            
-        });
-
-        gameContainer.appendChild(cell)
+    } else {
+        whiteTurn = bottomTurn;
+        blackTurn = topTurn;
     }
-    gameBoard.push(rowArr)
+
+        whiteTurn.children[0].textContent = 'White';
+        blackTurn.children[0].textContent = 'Black';
+        whiteTurn.classList.add('white','selected');
+        blackTurn.classList.add('black');
+
+    for (let row = 0; row < 8; row++) {
+        const rowArr = []
+        for (let column = 0; column < 8; column++) {
+            const cell = document.createElement('div')
+            // For future customization
+            console.log(currentPlayer)
+            let squareNotation = letterMap[column] + (8 - row)
+            if (currentPlayer == 'd') {
+                squareNotation = letterMap[7 - column] + (row + 1);
+            }
+            cell.setAttribute('square', squareNotation)
+            cell.classList.add('cell')
+            if (row % 2 == 0) {
+                if (column % 2 == 1) {
+                    cell.classList.add('black')
+                }
+            } else {
+                if (column % 2 == 0) {
+                    cell.classList.add('black')
+                }
+            }
+            rowArr.push("None")
+            cell.addEventListener('click', (e)=> {
+                const cellPos = e.currentTarget.getAttribute('square')
+                const file = cellPos.charCodeAt(0) - 97
+                const rank = 8 -    +cellPos[1]
+                const squareInfo = gameBoard[rank][file] 
+                
+                if (squareInfo[0] == currentPlayer && selectedPiece == null)  {
+                    selectedPiece = {piece: squareInfo.substring(1), square: [file ,rank]}
+                    console.log(selectedPiece)
+                    return
+                }
+
+                if (selectedPiece) {
+                    console.log(selectedPiece.square)
+                    console.log([file, rank])
+                    docConnect.send('movePiece', {fromFile: selectedPiece.square[0], fromRank: +selectedPiece.square[1], toFile: file, toRank: rank}, {
+                        success: function() {},
+                        failure: function(why) {console.log(why)}
+                    })
+                    selectedPiece = null;
+                }
+
+                
+            });
+
+            gameContainer.appendChild(cell)
+        }
+        gameBoard.push(rowArr)
+    }
 }
 
 function initializeGame(){
@@ -137,8 +192,7 @@ function initializeGame(){
     gameBoard[1] = blackPawnRow
     gameBoard[6] = whitePawnRow
     gameBoard[7] = bottomRow
-    drawBoard()
-    console.log(gameBoard)
+    drawBoard();
     
 }
 
@@ -166,7 +220,6 @@ function drawBoard() {
                 const image = document.createElement('img');
                 image.src = pieceMap[square]
                 pieceDiv.appendChild(image)
-                console.log(`[square=${letterMap[column]}${8 - row}]`)
                 gameContainer.querySelector(`[square=${letterMap[column]}${8 - row}]`).appendChild(pieceDiv)
             }
 
@@ -204,6 +257,4 @@ function movePiece(from, to, castle=false) {
     gameContainer.querySelector(`[square=${toName}]`).appendChild(oldPiece)
 }
 
-
-initializeGame()
 

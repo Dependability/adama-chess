@@ -8,7 +8,9 @@
 public principal playerW;
 public principal playerB;
 public string currentPlayer = "w";
+public string gameState = "waiting";
 
+bubble playerColor = playerW == @who ? "w" : "d";
 
 enum PieceType {
     None,
@@ -95,13 +97,20 @@ procedure isMoveValid( int fromRow, int fromCol, int toRow, int toCol, Piece fro
     int size = 0;
     list<BoardSquare> inFront;
     int multiplier = fromPiece.color == "b" ? -1 : 1;
-    NONO = ""+multiplier;
-    maybe<BoardSquare> fromSquare = (iterate _chessBoard where rank == fromRow && file == fromCol limit 1)[0];
+    
+    if (fromRow == toRow && toCol == fromCol) {
+        return false;
+    }
+    if ((iterate _chessBoard where (fromRow == rank && fromCol == file) || (toCol == file && toRow == rank) limit 2).size() != 2) {
+        return false;
+    }
+
+    
     if (fromPiece.pieceInfo == PieceType::Pawn) {
         
         if (toCol != fromCol) {
             /* Check if can take diagonals */
-            if( (fromCol + 1 == toCol && fromRow - multiplier == toRow )||  (fromCol - 1 == toCol && fromRow - multiplier == toRow)) {
+            if( (fromCol + 1 == toCol && fromRow - multiplier == toRow && (iterate _chessBoard where file == fromCol +1 && rank == fromRow - multiplier && piece.pieceInfo != PieceType::None limit 1).size() == 1)||  (fromCol - 1 == toCol && fromRow - multiplier == toRow && (iterate _chessBoard where file == fromCol - 1 && rank == fromRow - multiplier && piece.pieceInfo != PieceType::None limit 1).size() == 1)) {
                 return true;
             }
             return false;
@@ -271,31 +280,33 @@ procedure reset_piece(int row, int col) {
 public int checks;
 channel<playerSquare> movePiece;
 
-procedure validateMove(playerSquare moveThing) -> bool {
-        NONO = "";
+message Nothing {
+    int key;
+}
+channel close(Nothing sum) {
+    Document.destroy();
+}
+
+procedure validateMove(playerSquare moveThing) -> string {
         int multiplier = currentPlayer == "b" ? -1 : 1;
         bool twice = false;
         bool canTakeFromEnPassant = false;
-        string currentPlayerColor = currentPlayer;
         checks = 0;
-        if ((iterate _chessBoard where rank == moveThing.fromRank && file == moveThing.fromFile && currentPlayerColor == piece.color)[0] as fromSquare) {
+        if ((iterate _chessBoard where rank == moveThing.fromRank && file == moveThing.fromFile)[0] as fromSquare) {
             if ((iterate _chessBoard where rank == moveThing.toRank && file == moveThing.toFile)[0] as toSquare) {
                 /* First check if can move by rules */
+
                 Piece fromPiece = fromSquare.piece;
+                string currentPlayerColor = fromPiece.color;
                 int fromRow = moveThing.fromRank;
                 int fromCol = moveThing.fromFile;
                 int toRow = moveThing.toRank;
                 int toCol = moveThing.toFile;
-                if (fromRow == toRow && toCol == fromCol) {
-                    NONO = "SAME";
-                    return false;
-                }
                 
                 if ((isMoveValid(fromRow, fromCol, toRow, toCol, fromPiece))) {
-                    NONO = "Valid move!";
                     checks++;
                 } else {
-                    return false;
+                    return "invalid";
                 }
                 
                 
@@ -304,14 +315,14 @@ procedure validateMove(playerSquare moveThing) -> bool {
                 if (toSquare.piece.pieceInfo == PieceType::None) {
                     if (fromPiece.pieceInfo == PieceType::Pawn) {
                         if ((fromCol + 1 == toCol && fromRow - multiplier == toRow )||  (fromCol - 1 == toCol && fromRow - multiplier == toRow)) {
-                            return false;
-                }
+                            return "invalid";
+                        }
                         
                     }
                 } else {
                     
-                    if (toSquare.piece.color == currentPlayer) {
-                        return false;
+                    if (toSquare.piece.color == currentPlayerColor) {
+                        return "invalid";
                     }
                 }
                 checks++;
@@ -321,10 +332,15 @@ procedure validateMove(playerSquare moveThing) -> bool {
 
                 /* Find the king */
                 
-                if ((iterate _chessBoard where (piece.pieceInfo == PieceType::King && piece.color == currentPlayer) limit 1)[0] as kingSquare) {
+                if ((iterate _chessBoard where (piece.pieceInfo == PieceType::King && piece.color == currentPlayerColor) limit 1)[0] as kingSquare) {
                     int kingRow = kingSquare.rank;
                     int kingCol = kingSquare.file;
-                    string otherColor = currentPlayer == "b" ? "w" : "b";
+                    string otherColor = currentPlayerColor == "b" ? "w" : "b";
+                    if (fromPiece.pieceInfo == PieceType::King) {
+                        kingRow = toRow;
+                        kingCol = toCol;
+                    }
+
                     /* Probably more efficient way to do this but for now */
                     string prevColor = toSquare.piece.color;
                     bool prevTwice = toSquare.piece.twice;
@@ -342,7 +358,6 @@ procedure validateMove(playerSquare moveThing) -> bool {
                         for (int j = 0; j < 8; j++) {
                             if ((iterate _chessBoard where (piece.color == otherColor) && rank == i && file == j)[0] as chessPiece) {
                                 if (isMoveValid(chessPiece.rank, chessPiece.file, kingRow, kingCol, chessPiece.piece)) {
-                                    NONO = ""+chessPiece.file + chessPiece.rank;
                                     valid = false;
                                     break;
                                     
@@ -360,7 +375,7 @@ procedure validateMove(playerSquare moveThing) -> bool {
                     toSquare.piece.setPieceInfo(prevColor, prevTwice, prevCastle, prevPassant, prevType);
                         
                     if (valid == false) {
-                        return false;
+                        return "invalid";
                     }
                     checks++;
                     
@@ -368,38 +383,167 @@ procedure validateMove(playerSquare moveThing) -> bool {
 
 
                 if (checks == 3) {
-
+                    string validString;
                     /* Update piece if certain condition */
-                    if (fromPiece.pieceInfo == PieceType::Pawn) {
-                        fromPiece.canTakeFromEnPassant = false;
-                        if (fromPiece.twice) {
-                            fromPiece.twice = false;
-                            if (Math.abs(fromRow - toRow) == 2) {
-                                fromPiece.canTakeFromEnPassant = true;
-                            }
-                        }
-                        
-                    }
-                    lastMove = "" + fromRow + "" + fromCol + " " + toRow + "" + toCol;
-                    toSquare.piece.setPieceInfo(fromPiece.color, fromPiece.twice, fromPiece.canCastle, fromPiece.canTakeFromEnPassant, fromPiece.pieceInfo);
-                    reset_piece(fromRow, fromCol);
-
-
-                    return true;
+                    return "normal-valid";
                     
                 } else {
-                    return false;
+                    return "invalid";
                 }
                 
             } 
         }
-        return false; 
+        return "invalid"; 
         
         
     
 } 
 
+procedure updateBoard(playerSquare moveThing) -> bool {
+    
+    string validity = validateMove(moveThing);
+    int fromRow = moveThing.fromRank;
+    int fromCol = moveThing.fromFile;
+    int toCol = moveThing.toFile;
+    int toRow  = moveThing.toRank;
+
+    if (validity == "invalid") {
+        return false;
+    }
+
+    if ((iterate _chessBoard where rank == fromRow && file == fromCol limit 1)[0] as fromSquare) {
+        if ((iterate _chessBoard where rank == toRow && file == toCol limit 1)[0] as toSquare) {
+            Piece fromPiece = fromSquare.piece;
+            if (fromPiece.pieceInfo == PieceType::Pawn) {
+                fromPiece.canTakeFromEnPassant = false;
+                if (fromPiece.twice) {
+                    fromPiece.twice = false;
+                }
+                if (Math.abs(fromRow - toRow) == 2) {
+                    fromPiece.canTakeFromEnPassant = true;
+                }
+            
+            }
+            if (validity == "normal-valid") {
+                lastMove = "" + fromRow + "" + fromCol + " " + toRow + "" + toCol;
+                toSquare.piece.setPieceInfo(fromPiece.color, fromPiece.twice, fromPiece.canCastle, fromPiece.canTakeFromEnPassant, fromPiece.pieceInfo);
+                reset_piece(fromRow, fromCol);
+            }   
+
+        }
+    }
+    /* Check if piece is special */
+    /* Get the pieces to and fro */
+
+    return true;
+
+
+
+}
+
+procedure kingCanMove(BoardSquare kingSquare) -> bool {
+    
+        for (int i = -1; i <= 1; i++) {
+            
+            if (i == 0) {
+                continue;
+            }
+            playerSquare TRBL = {fromRank: kingSquare.rank, fromFile: kingSquare.file ,toFile: kingSquare.file + i, toRank: kingSquare.rank + i};
+            playerSquare TLBR = {fromRank: kingSquare.rank, fromFile: kingSquare.file, toFile: kingSquare.file - i, toRank: kingSquare.rank + i};
+            playerSquare MRML = {fromRank: kingSquare.rank, fromFile: kingSquare.file, toFile: kingSquare.file , toRank: kingSquare.rank + i};
+            playerSquare TMBM = {fromRank: kingSquare.rank, fromFile: kingSquare.file, toFile: kingSquare.file + i, toRank: kingSquare.rank};
+            if (validateMove(TRBL) == "normal-valid") {
+                    return true;
+                }
+            if (validateMove(TLBR) == "normal-valid") {
+                return true;
+            }
+            if (validateMove(MRML) == "normal-valid") {
+                return true;
+            }
+            if (validateMove(TMBM) == "normal-valid") {
+                return true;
+            }
+            
+        
+        
+        }
+    
+    return false;
+}
+
+procedure anyPieceCanMakeValidMove(BoardSquare kingSquare) -> bool {
+    list<BoardSquare> yourPieces = (iterate _chessBoard where piece.color == kingSquare.piece.color);
+    list<BoardSquare> board = (iterate _chessBoard where piece.color != kingSquare.piece.color);
+    for (int i = 0; i < yourPieces.size(); i++) {
+        if (yourPieces[i] as yourPiece) {
+            for (int j = 0; j < board.size(); j++) {
+                if (board[j] as boardPiece) {
+                    playerSquare tryMove = {fromFile: yourPiece.file, toFile: boardPiece.file, fromRank: yourPiece.rank, toRank: boardPiece.rank};
+                    if (validateMove(tryMove) != "invalid") {
+                        NONO = ""+yourPiece.file + yourPiece.rank + " " + boardPiece.file + boardPiece.rank;
+                        return true;
+                    }
+                }
+            }
+        }
+        
+    }
+    
+    
+    return false;
+}
+
+procedure check_if_end() -> string{
+    /* To check if a player won, the other king can not have anywhere to go and must be in check */
+
+    /* Find the king */
+
+    if ((iterate _chessBoard where piece.pieceInfo == PieceType::King && piece.color != currentPlayer limit 1)[0] as kingSquare) {
+        /* Check if king is checked */
+        bool isChecked;
+        /* Better to just do a list */
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8;j++) {
+                if ((iterate _chessBoard where piece.pieceInfo != PieceType::None && piece.color == currentPlayer && rank == i && file == j limit 1)[0] as tryPiece) {
+                    playerSquare tryMove = {fromRank: tryPiece.rank ,toRank: kingSquare.rank, fromFile: tryPiece.file, toFile: kingSquare.file};
+                    if (validateMove(tryMove) != "invalid") {
+                        isChecked = true;
+                    }
+                } else {
+                    continue;
+                }
+            }
+        }
+
+        if (anyPieceCanMakeValidMove(kingSquare)) {
+            return "continue";
+        } else {
+            if (isChecked) {
+                return "win";
+            }
+            return "draw";
+        }
+       
+        
+        
+    }
+    
+    /* First check if it is in check */
+    
+    return "continue";
+
+
+    /* If king is checked, first check if king can move */
+    /* If king can't move, then check if taking a check pieced can let king move */
+    /* Do this for all pieces checking the king, and if NONE of the moves are valid, then return true */
+    
+    /* The validate move seems to be more useful here!*/
+
+    /* For draw, if king is not checked and none of the pieces can move, then draw */
+}
 #start {
+    gameState = "game";
     transition #turn;
 }
 
@@ -408,7 +552,18 @@ procedure validateMove(playerSquare moveThing) -> bool {
     future<playerSquare> chosenSquare = movePiece.fetch(currentPlayer == "w" ? playerW : playerB);
     playerSquare squareUnwrapped = chosenSquare.await();
     
-    if (validateMove(squareUnwrapped)) {
+    if (updateBoard(squareUnwrapped)) {
+        /* Check if player won */
+        string willEnd = check_if_end();
+        if (willEnd != "continue") {
+            if (willEnd == "draw") {
+                gameState = "draw";
+            } else {
+                gameState = "win";
+            }
+            transition #end;
+            return;
+        }
         currentPlayer = currentPlayer == "w" ? "b" : "w";
     }
 
@@ -417,13 +572,10 @@ procedure validateMove(playerSquare moveThing) -> bool {
 }
 
 #end {
-
-
+    return;
 }
 
 @connected {
-    
-    
     if (playerW == @no_one) {
         playerW = @who;
         if (playerB != @no_one) {
@@ -439,7 +591,7 @@ procedure validateMove(playerSquare moveThing) -> bool {
         return true;
     }
 
-    return true;
+    return false;
 }
 
 @disconnected {

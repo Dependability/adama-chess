@@ -12,9 +12,21 @@
    
 </head>
 <body>
-    <div class="top">
-        <h1></h1>
+    <div class="close">X</div>
+
+    <div class="start-page">
+        <h1>Adama Chess</h1>
+        <input type="text">
+        <button>Play</button>
     </div>
-    <div class="game-container"></div>
+    <div class="main-game hidden">
+        <div class="turn"><span></span><div class="indicator"></div></div>
+        <div class="game-container hidden"></div>
+        <div class="turn"><span></span><div class="indicator"></div></div>
+    </div>
+    <div class="loading hidden">
+        <img src="assets/loading-gif.gif" alt="Loading">
+        <span>Searching for opponent...</span>
+    </div>
 </body>
 </html> 
