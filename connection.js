@@ -63,18 +63,18 @@ function visualMove (move) {
 }
 
 const pieceMap = {
-    "dRook": './assets/rook_d.png',
-    "dKnight": './assets/knight_d.png',
-    "dBishop": './assets/bishop_d.png',
-    "dQueen": './assets/queen_d.png',
-    "dKing": './assets/king_d.png',
-    "dPawn": './assets/pawn_d.png',
-    "wRook": './assets/rook_l.png',
-    "wKnight": './assets/knight_l.png',
-    "wBishop": './assets/bishop_l.png',
-    "wQueen": './assets/queen_l.png',
-    "wKing": './assets/king_l.png',
-    "wPawn": './assets/pawn_l.png',
+    "dRook": './assets/rook_d.svg',
+    "dKnight": './assets/knight_d.svg',
+    "dBishop": './assets/bishop_d.svg',
+    "dQueen": './assets/queen_d.svg',
+    "dKing": './assets/king_d.svg',
+    "dPawn": './assets/pawn_d.svg',
+    "wRook": './assets/rook_l.svg',
+    "wKnight": './assets/knight_l.svg',
+    "wBishop": './assets/bishop_l.svg',
+    "wQueen": './assets/queen_l.svg',
+    "wKing": './assets/king_l.svg',
+    "wPawn": './assets/pawn_l.svg',
 }
 
 function subscribeToTree() {
@@ -154,6 +154,7 @@ function connectToTree(person) {
 
 function disconnect() {
     popup.classList.remove('hidden');
+    docConnect.end();
     setTimeout(()=> {
         popup.classList.add('hidden');
         mainGame.classList.add('hidden');
