@@ -27,13 +27,13 @@ record Piece {
     PieceType pieceInfo;
     string color = "n";
     bool twice = true;
-    bool canCastle = false;
+    bool canCastle = true;
     bool canTakeFromEnPassant = false;
     method resetPiece() {
         pieceInfo = PieceType::None;
         color = "n";
         twice = true;
-        canCastle = false;
+        canCastle = true;
         canTakeFromEnPassant = false;
     }
     method setPieceInfo(string _color, bool _twice, bool _canCastle, bool _canTakeFromEnPessant, PieceType _pieceInfo) {
@@ -56,7 +56,6 @@ record BoardSquare {
 
 table<BoardSquare> _chessBoard;
 public formula chessBoard = iterate _chessBoard;
-public string PLEASE;
 @construct {
     for (int row = 0; row < 8; row++ ) {
         for (int column = 0; column < 8; column++ ) {
@@ -90,9 +89,8 @@ function posToIndex(int file, int rank) -> int {
 }
 
 public string lastMove;
-public string NONO;
-public int piecetype;
 /* Break up Valid Functions into seperate based on item */
+
 procedure isMoveValid( int fromRow, int fromCol, int toRow, int toCol, Piece fromPiece) -> bool {
     int size = 0;
     list<BoardSquare> inFront;
@@ -110,9 +108,17 @@ procedure isMoveValid( int fromRow, int fromCol, int toRow, int toCol, Piece fro
         
         if (toCol != fromCol) {
             /* Check if can take diagonals */
-            if( (fromCol + 1 == toCol && fromRow - multiplier == toRow && (iterate _chessBoard where file == fromCol +1 && rank == fromRow - multiplier && piece.pieceInfo != PieceType::None limit 1).size() == 1)||  (fromCol - 1 == toCol && fromRow - multiplier == toRow && (iterate _chessBoard where file == fromCol - 1 && rank == fromRow - multiplier && piece.pieceInfo != PieceType::None limit 1).size() == 1)) {
-                return true;
+            if( (fromCol + 1 == toCol && fromRow - multiplier == toRow)) {
+                if ((iterate _chessBoard where file == fromCol +1 && rank == fromRow - multiplier && piece.pieceInfo != PieceType::None limit 1).size() == 1 || (iterate _chessBoard where file == fromCol + 1 && rank == fromRow  && piece.pieceInfo == PieceType::Pawn && piece.canTakeFromEnPassant == true && piece.color != fromPiece.color limit 1).size() == 1) {
+                    return true;
+                }
             }
+            if ((fromCol - 1 == toCol && fromRow - multiplier == toRow )) {
+                if  (((iterate _chessBoard where file == fromCol - 1 && rank == fromRow - multiplier && piece.pieceInfo != PieceType::None limit 1).size() == 1) || ((iterate _chessBoard where file == fromCol - 1 && rank == fromRow && piece.pieceInfo == PieceType::Pawn && piece.canTakeFromEnPassant == true && piece.color != fromPiece.color limit 1).size() == 1)) {
+                    return true;
+                }
+            }
+            /* Next check if en pessant */
             return false;
         }
         
@@ -155,10 +161,20 @@ procedure isMoveValid( int fromRow, int fromCol, int toRow, int toCol, Piece fro
         int secondPos = posToIndex(fromCol, fromRow);
         int difference = firstPos - secondPos;
         difference = Math.abs(difference);
+        int rankDif = Math.abs(toRow - fromRow);
+        int fileDif = Math.abs(fromCol - toCol);
+        /* This is good but can cause a knight to be able to move 6 in the same row! 
+            Needs another check to see if the row and column are within 1 or 2.
+        */
         if (difference == 6 || difference == 10 || difference == 15 || difference == 17) {
-            return true;
+            if (rankDif >= 1 && rankDif <= 2 && fileDif <= 2 && fileDif >= 1) {
+                return true;
+            }
+            
         }
     }
+
+    
     if (fromPiece.pieceInfo == PieceType::Rook || fromPiece.pieceInfo == PieceType::Queen || fromPiece.pieceInfo == PieceType::Bishop) {
         if ((toRow == fromRow || fromCol == toCol) && (fromPiece.pieceInfo == PieceType::Rook || fromPiece.pieceInfo == PieceType::Queen)) {
             
@@ -171,7 +187,6 @@ procedure isMoveValid( int fromRow, int fromCol, int toRow, int toCol, Piece fro
                         inFront = (iterate _chessBoard where ((toRow == rank) && (file > fromCol) && (piece.pieceInfo != PieceType::None)) order by file asc limit 1);
                         if (inFront[0] as frontItem) {
                             if (toCol > frontItem.file) {
-                                piecetype = frontItem.file;
                                 return false;
                             }
                         }
@@ -260,6 +275,19 @@ procedure isMoveValid( int fromRow, int fromCol, int toRow, int toCol, Piece fro
         if (diagonalCheck || adjacentCheck) {
             return true;
         } else {
+            if (fromPiece.canCastle) {
+                if (fromRow == toRow) {
+                    /* Do a similar check from the rook, check if there is anything in the way 
+                    *  This also requires that the rook can castle and that all the squares are not checked
+                    *  by some other square, but that validation can be checked in the validate move
+                    */
+                    if ((iterate _chessBoard where ((file == 0 || file == 7) &&  rank == fromRow && toCol == file && piece.pieceInfo == PieceType::Rook && piece.canCastle == true && piece.color == fromPiece.color) limit 1).size() != 1 ) {
+                        return false;
+                    } else {
+                        return true;
+                    }
+                }
+            }
             return false;
         }
 
@@ -277,7 +305,6 @@ procedure reset_piece(int row, int col) {
     }
 }
 
-public int checks;
 channel<playerSquare> movePiece;
 
 message Nothing {
@@ -287,11 +314,17 @@ channel close(Nothing sum) {
     Document.destroy();
 }
 
+public string someString = "";
+
 procedure validateMove(playerSquare moveThing) -> string {
         int multiplier = currentPlayer == "b" ? -1 : 1;
         bool twice = false;
-        bool canTakeFromEnPassant = false;
-        checks = 0;
+        bool enPassant = false;
+        bool castle = false;
+        int checks = 0;
+        someString = "";
+
+
         if ((iterate _chessBoard where rank == moveThing.fromRank && file == moveThing.fromFile)[0] as fromSquare) {
             if ((iterate _chessBoard where rank == moveThing.toRank && file == moveThing.toFile)[0] as toSquare) {
                 /* First check if can move by rules */
@@ -315,14 +348,82 @@ procedure validateMove(playerSquare moveThing) -> string {
                 if (toSquare.piece.pieceInfo == PieceType::None) {
                     if (fromPiece.pieceInfo == PieceType::Pawn) {
                         if ((fromCol + 1 == toCol && fromRow - multiplier == toRow )||  (fromCol - 1 == toCol && fromRow - multiplier == toRow)) {
-                            return "invalid";
+                            /* Only return invalid if enpassant*/
+                            if (fromCol + 1 == toCol) {
+                                
+                                if ((iterate _chessBoard where file == fromCol + 1 && rank == fromRow && piece.pieceInfo == PieceType::Pawn && piece.canTakeFromEnPassant == true && piece.color != fromPiece.color limit 1).size() == 1) {
+                                    enPassant = true;  
+                                } else {
+                                    someString = "NOT ENPASSANT";
+                                    return "invalid";
+                                }
+                            }
+                            if (fromCol - 1 == toCol) {
+                                if ((iterate _chessBoard where file == fromCol - 1 && rank == fromRow && piece.pieceInfo == PieceType::Pawn && piece.canTakeFromEnPassant == true && piece.color != fromPiece.color limit 1).size() == 1) {
+                                    enPassant = true;
+                                } else {
+                                    return "invalid";
+                                }
+                            }
+                            
                         }
                         
                     }
                 } else {
                     
                     if (toSquare.piece.color == currentPlayerColor) {
-                        return "invalid";
+                        if (fromPiece.pieceInfo == PieceType::King && toSquare.piece.pieceInfo == PieceType::Rook && toSquare.piece.canCastle == true) {
+                            /* The squares that the king will pass through must not be checked */
+                            /* Can check direction with subtraction */
+                            int pieceDirection = -1;
+                            if (((toCol - fromCol) > 0)) {
+                                pieceDirection = 1;
+                            }
+                            bool possible = true;
+                            list<BoardSquare> squareInWay;
+
+                            if (pieceDirection == 1) {
+                                squareInWay = (iterate _chessBoard where (rank == fromRow && file <= toCol - 1 && file >= fromCol));
+                            } else {
+                                squareInWay = (iterate _chessBoard where (rank == fromRow  && file >= toCol + 2 && file <= fromCol));
+                            }
+
+                            int squareSize = squareInWay.size();
+                            list<BoardSquare> enemySquares = (iterate _chessBoard where piece.color != currentPlayerColor && piece.pieceInfo != PieceType::None);
+
+                            for (int i = 0; i < squareSize; i++) {
+                                if (squareInWay[i] as square) {
+                                    if (square.piece.pieceInfo != PieceType::None && (square.file != 0 && square.file != 7) && square.file != fromCol) {
+                                        possible = false;
+                                        break;
+                                    }
+                                    /* Check if any of the opponent pieces can take it! */
+                                    bool enemyCheck = false;
+                                    for (int j = 0; j < enemySquares.size(); j++) {
+                                        if (enemySquares[j] as enemySquare) {
+                                            if (isMoveValid(enemySquare.rank, enemySquare.file, square.rank, square.file, enemySquare.piece)) {
+                                                enemyCheck = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (enemyCheck) {
+                                        possible = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!possible) {
+                                return "invalid";
+                            } else {
+                                castle = true;
+                            }
+
+                            
+                        } else {
+                            return "invalid";
+                        }
+
                     }
                 }
                 checks++;
@@ -331,60 +432,69 @@ procedure validateMove(playerSquare moveThing) -> string {
                 /* check if king is in danger if it moves */
 
                 /* Find the king */
-                
-                if ((iterate _chessBoard where (piece.pieceInfo == PieceType::King && piece.color == currentPlayerColor) limit 1)[0] as kingSquare) {
-                    int kingRow = kingSquare.rank;
-                    int kingCol = kingSquare.file;
-                    string otherColor = currentPlayerColor == "b" ? "w" : "b";
-                    if (fromPiece.pieceInfo == PieceType::King) {
-                        kingRow = toRow;
-                        kingCol = toCol;
-                    }
+                if (!castle) {
+                    if ((iterate _chessBoard where (piece.pieceInfo == PieceType::King && piece.color == currentPlayerColor) limit 1)[0] as kingSquare) {
+                        int kingRow = kingSquare.rank;
+                        int kingCol = kingSquare.file;
+                        string otherColor = currentPlayerColor == "b" ? "w" : "b";
+                        if (fromPiece.pieceInfo == PieceType::King) {
+                            kingRow = toRow;
+                            kingCol = toCol;
+                        }
 
-                    /* Probably more efficient way to do this but for now */
-                    string prevColor = toSquare.piece.color;
-                    bool prevTwice = toSquare.piece.twice;
-                    bool prevCastle = toSquare.piece.canCastle;
-                    bool prevPassant = toSquare.piece.canTakeFromEnPassant;
-                    PieceType prevType = toSquare.piece.pieceInfo;
+                        /* Probably more efficient way to do this but for now */
+                        string prevColor = toSquare.piece.color;
+                        bool prevTwice = toSquare.piece.twice;
+                        bool prevCastle = toSquare.piece.canCastle;
+                        bool prevPassant = toSquare.piece.canTakeFromEnPassant;
+                        PieceType prevType = toSquare.piece.pieceInfo;
 
-                    /* Set piece to the spot */
-                    toSquare.piece.setPieceInfo(fromPiece.color, fromPiece.twice, fromPiece.canCastle, fromPiece.canTakeFromEnPassant, fromPiece.pieceInfo);
-                    fromSquare.piece.resetPiece();
-                   
+                        /* Set piece to the spot */
+                        toSquare.piece.setPieceInfo(fromPiece.color, fromPiece.twice, fromPiece.canCastle, fromPiece.canTakeFromEnPassant, fromPiece.pieceInfo);
+                        fromSquare.piece.resetPiece();
                     
-                    bool valid = true;
-                    for (int i = 0; i < 8; i++) {
-                        for (int j = 0; j < 8; j++) {
-                            if ((iterate _chessBoard where (piece.color == otherColor) && rank == i && file == j)[0] as chessPiece) {
-                                if (isMoveValid(chessPiece.rank, chessPiece.file, kingRow, kingCol, chessPiece.piece)) {
-                                    valid = false;
-                                    break;
+                        
+                        bool valid = true;
+                        for (int i = 0; i < 8; i++) {
+                            for (int j = 0; j < 8; j++) {
+                                if ((iterate _chessBoard where (piece.color == otherColor) && rank == i && file == j)[0] as chessPiece) {
+                                    if (isMoveValid(chessPiece.rank, chessPiece.file, kingRow, kingCol, chessPiece.piece)) {
+                                        valid = false;
+                                        break;
+                                        
+                                    }
                                     
                                 }
-                                
+                            }
+                            if (valid == false) {
+                                break;
                             }
                         }
-                        if (valid == false) {
-                            break;
-                        }
-                    }
-                    
-                        /* Set piece back */
-                    fromSquare.piece.setPieceInfo(toSquare.piece.color, toSquare.piece.twice, toSquare.piece.canCastle, toSquare.piece.canTakeFromEnPassant, toSquare.piece.pieceInfo);
-                    toSquare.piece.setPieceInfo(prevColor, prevTwice, prevCastle, prevPassant, prevType);
                         
-                    if (valid == false) {
-                        return "invalid";
+                            /* Set piece back */
+                        fromSquare.piece.setPieceInfo(toSquare.piece.color, toSquare.piece.twice, toSquare.piece.canCastle, toSquare.piece.canTakeFromEnPassant, toSquare.piece.pieceInfo);
+                        toSquare.piece.setPieceInfo(prevColor, prevTwice, prevCastle, prevPassant, prevType);
+                            
+                        if (valid == false) {
+                            return "invalid";
+                        }
+                        checks++;
+                        
                     }
-                    checks++;
-                    
-                }
+            } else {
+                checks++;
+            }
 
 
                 if (checks == 3) {
                     string validString;
                     /* Update piece if certain condition */
+                    if (castle) {
+                        return "castle";
+                    }
+                    if (enPassant) {
+                        return "enpassant";
+                    }
                     return "normal-valid";
                     
                 } else {
@@ -406,6 +516,7 @@ procedure updateBoard(playerSquare moveThing) -> bool {
     int fromCol = moveThing.fromFile;
     int toCol = moveThing.toFile;
     int toRow  = moveThing.toRank;
+    bool promotion = false;
 
     if (validity == "invalid") {
         return false;
@@ -422,18 +533,79 @@ procedure updateBoard(playerSquare moveThing) -> bool {
                 if (Math.abs(fromRow - toRow) == 2) {
                     fromPiece.canTakeFromEnPassant = true;
                 }
+                /* If on the last row */
+                if ((toRow == 0 && fromPiece.color == "w") || (toRow == 7 && fromPiece.color == "b")) {
+                    fromPiece.pieceInfo = PieceType::Queen;
+                    promotion = true;
+                }
             
             }
-            if (validity == "normal-valid") {
+            if (fromPiece.pieceInfo == PieceType::King) {
+                fromPiece.canCastle = false;
+            }
+            if (fromPiece.pieceInfo == PieceType::Rook) {
+                fromPiece.canCastle = false;
+            }
+            
+            if (validity == "castle") {
+                
+                int kingCol = 2;
+                int rookCol = 3;
+                if (toCol - fromCol > 0) {
+                    kingCol = 6;
+                    rookCol = 5;
+                }
+
+                Piece rookPiece = toSquare.piece;
+                if (fromPiece.pieceInfo == PieceType::King) {
+                    
+                    
+
+                }
+                
+                if ((iterate _chessBoard where rank == fromRow && file == kingCol limit 1)[0] as kingPos) {
+                    if ((iterate _chessBoard where rank == fromRow && file == rookCol limit 1)[0] as rookPos) {
+                        lastMove = "" + fromRow + "" + fromCol + " " + toRow + "" + toCol + " castle";
+
+                        if (fromPiece.pieceInfo == PieceType::King) {
+                            kingPos.piece.setPieceInfo(fromPiece.color, fromPiece.twice, fromPiece.canCastle, fromPiece.canTakeFromEnPassant, fromPiece.pieceInfo);
+                            rookPos.piece.setPieceInfo(rookPiece.color, rookPiece.twice, rookPiece.canCastle, rookPiece.canTakeFromEnPassant, rookPiece.pieceInfo);
+                        } else {
+                            rookPos.piece.setPieceInfo(fromPiece.color, fromPiece.twice, fromPiece.canCastle, fromPiece.canTakeFromEnPassant, fromPiece.pieceInfo);  
+                            kingPos.piece.setPieceInfo(rookPiece.color, rookPiece.twice, rookPiece.canCastle, rookPiece.canTakeFromEnPassant, rookPiece.pieceInfo);
+                             
+                        }
+                        reset_piece(fromRow, fromCol);
+                        reset_piece(toRow, toCol);
+                        
+                    }
+                
+                }
+                        
+                    
+                
+            }
+            if (validity == "normal-valid" || validity == "enpassant") {
                 lastMove = "" + fromRow + "" + fromCol + " " + toRow + "" + toCol;
                 toSquare.piece.setPieceInfo(fromPiece.color, fromPiece.twice, fromPiece.canCastle, fromPiece.canTakeFromEnPassant, fromPiece.pieceInfo);
                 reset_piece(fromRow, fromCol);
+                if (promotion) {
+                    lastMove += " promotion";
+                }
+
+                int multiplier = fromPiece.color == "w" ? 1 : -1;
+                if (validity == "enpassant") {
+                    if ((iterate _chessBoard where rank == toRow + multiplier && file == toCol limit 1)[0] as takenPawn) {
+                        reset_piece(takenPawn.rank, takenPawn.file);
+                    }
+                    lastMove += " enpassant";
+                }
             }   
 
         }
     }
     /* Check if piece is special */
-    /* Get the pieces to and fro */
+    
 
     return true;
 
@@ -441,9 +613,12 @@ procedure updateBoard(playerSquare moveThing) -> bool {
 
 }
 
+
+/* With the better validate move, this becomes useless */
 procedure kingCanMove(BoardSquare kingSquare) -> bool {
     
         for (int i = -1; i <= 1; i++) {
+
             
             if (i == 0) {
                 continue;
@@ -471,6 +646,7 @@ procedure kingCanMove(BoardSquare kingSquare) -> bool {
     
     return false;
 }
+public string possibleMove;
 
 procedure anyPieceCanMakeValidMove(BoardSquare kingSquare) -> bool {
     list<BoardSquare> yourPieces = (iterate _chessBoard where piece.color == kingSquare.piece.color);
@@ -481,7 +657,7 @@ procedure anyPieceCanMakeValidMove(BoardSquare kingSquare) -> bool {
                 if (board[j] as boardPiece) {
                     playerSquare tryMove = {fromFile: yourPiece.file, toFile: boardPiece.file, fromRank: yourPiece.rank, toRank: boardPiece.rank};
                     if (validateMove(tryMove) != "invalid") {
-                        NONO = ""+yourPiece.file + yourPiece.rank + " " + boardPiece.file + boardPiece.rank;
+                        possibleMove = ""+tryMove.fromFile +""+tryMove.fromRank + " " + tryMove.toFile + "" + tryMove.toRank;
                         return true;
                     }
                 }
@@ -502,6 +678,7 @@ procedure check_if_end() -> string{
     if ((iterate _chessBoard where piece.pieceInfo == PieceType::King && piece.color != currentPlayer limit 1)[0] as kingSquare) {
         /* Check if king is checked */
         bool isChecked;
+
         /* Better to just do a list */
         for (int i = 0; i < 8; i++) {
             for (int j = 0; j < 8;j++) {

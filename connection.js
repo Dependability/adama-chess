@@ -11,6 +11,10 @@ let docConnect;
 let whiteTurn;
 let blackTurn;
 let user;
+let possibleMove = '';
+const popup = document.querySelector(".pop-up");
+const popupInner = document.querySelector(".pop-up .inner");
+
 connection.start();
 connection.wait_connected().then((result) => {
     console.log(result);
@@ -20,11 +24,10 @@ connection.wait_connected().then((result) => {
 
 startPage.querySelector('button').addEventListener('click', ()=> {
     startPage.classList.add('hidden');
-    mainGame.classList.remove('hidden');
+    loading.classList.remove('hidden');
     user = document.querySelector('input').value;
     connection.DocumentCreate(user,"chess","first",null,{}, {
-        success: function(anything) {
-            console.log(anything)
+        success: function() {
             subscribeToTree();
             connectToTree(user);
             
@@ -52,8 +55,26 @@ function visualMove (move) {
     if (move == "") {
         return;
     }
-    const [fromPos, toPos] = move.split(" ");
-    movePiece(fromPos, toPos);
+    const moveList = move.split(" ");
+    const fromPos = moveList[0];
+    const toPos = moveList[1];
+    const special = moveList.length == 3 ?  moveList[2]: "";
+    movePiece(fromPos, toPos, special);
+}
+
+const pieceMap = {
+    "dRook": './assets/rook_d.png',
+    "dKnight": './assets/knight_d.png',
+    "dBishop": './assets/bishop_d.png',
+    "dQueen": './assets/queen_d.png',
+    "dKing": './assets/king_d.png',
+    "dPawn": './assets/pawn_d.png',
+    "wRook": './assets/rook_l.png',
+    "wKnight": './assets/knight_l.png',
+    "wBishop": './assets/bishop_l.png',
+    "wQueen": './assets/queen_l.png',
+    "wKing": './assets/king_l.png',
+    "wPawn": './assets/pawn_l.png',
 }
 
 function subscribeToTree() {
@@ -72,18 +93,37 @@ function subscribeToTree() {
 
         
     }, gameState: (state)=>{
+        console.log(state)
         if (state == 'waiting') {
             loading.classList.remove('hidden');
         }
         if (state == 'game') {
             loading.classList.add('hidden');
-            gameContainer.classList.remove('hidden');
             mainGame.classList.remove('hidden');
             console.log(currentPlayer)
             // resetBoard();
             createBoard();
             initializeGame();
         }
+        if (state == 'win') {
+            popupInner.textContent = playerTurn == currentPlayer ? "You win by checkmate!" : "You lost...";  
+            setTimeout(()=> {
+                popup.classList.remove('hidden');
+
+            }, 500);
+        }
+        if (state == 'draw') {
+            popupInner.textContent = "Stalemate - Draw";
+            setTimeout(()=> {
+                popup.classList.remove('hidden');
+
+            }, 500);
+        }
+    },possibleMove: (possible)=> {
+        possibleMove = possible;
+        console.log(possibleMove)
+    }, someString: (strsad)=> {
+        console.log(strsad);
     }})
 }
 
@@ -91,11 +131,11 @@ function subscribeToTree() {
 function connectToTree(person) {
     docConnect = connection.ConnectionCreate(person, "chess", "first", {}, {
         next: function(payload) {
-            console.log(payload)
             if (payload['delta']) {
-                const delta = payload.delta
+                let delta = payload.delta
                 if ('data' in delta) {
-                    tree.update(delta.data);
+                    let data = delta.data;
+                    tree.update(data);
                 }
             }
             
@@ -105,10 +145,28 @@ function connectToTree(person) {
         },
         failure: function(reason) {
             console.log(reason)
+            if (reason == 625676) {
+                disconnect();
+            }
         }
     }) 
 }
 
+function disconnect() {
+    popup.classList.remove('hidden');
+    setTimeout(()=> {
+        popup.classList.add('hidden');
+        mainGame.classList.add('hidden');
+        startPage.classList.remove('hidden');
+        //Clear board
+        tree.nuke();
+        while (gameBoard.length) {
+            gameBoard.pop();
+        }
+        gameContainer.innerHTML = '';
+        popup.classList.add('hidden');
+    }, 5000)
+}
 
 
 
@@ -118,11 +176,13 @@ function createBoard() {
     if (currentPlayer == 'd') {
         whiteTurn = topTurn; 
         blackTurn = bottomTurn;
+        blackTurn.classList.add('you');
         
 
     } else {
         whiteTurn = bottomTurn;
         blackTurn = topTurn;
+        whiteTurn.classList.add('you');
     }
 
         whiteTurn.children[0].textContent = 'White';
@@ -199,20 +259,7 @@ function initializeGame(){
 }
 
 function drawBoard() {
-    const pieceMap = {
-        "dRook": './assets/rook_d.png',
-        "dKnight": './assets/knight_d.png',
-        "dBishop": './assets/bishop_d.png',
-        "dQueen": './assets/queen_d.png',
-        "dKing": './assets/king_d.png',
-        "dPawn": './assets/pawn_d.png',
-        "wRook": './assets/rook_l.png',
-        "wKnight": './assets/knight_l.png',
-        "wBishop": './assets/bishop_l.png',
-        "wQueen": './assets/queen_l.png',
-        "wKing": './assets/king_l.png',
-        "wPawn": './assets/pawn_l.png',
-    }
+    
     for (let row = 0; row < 8; row++) {
         for (let column = 0; column < 8; column++) {
             const square = gameBoard[row][column];
@@ -237,7 +284,7 @@ function sendMoveToServer() {
     })
 }
 
-function movePiece(from, to, castle=false) {
+function movePiece(from, to, special="") {
     
     // Implement keeping track of gained pieces
     const fromRank = +from[0]
@@ -249,15 +296,67 @@ function movePiece(from, to, castle=false) {
     const fromPiece = gameBoard[fromRank][fromFile]
     const toPiece = gameBoard[toRank][toFile]
     console.log(fromRank, fromFile, toRank, toFile)
-
-    //Move square from old to empty
-    gameBoard[toRank][toFile] = fromPiece
-    gameBoard[fromRank][fromFile] = "None"
     const fromName = String.fromCharCode(fromFile + 97) + Math.abs(8 - fromRank);
     const toName = String.fromCharCode(toFile + 97) + Math.abs(8 - toRank);
-    const oldPiece = gameContainer.querySelector(`[square=${fromName}] div`)
-    gameContainer.querySelector(`[square=${toName}]`).innerHTML = ''
-    gameContainer.querySelector(`[square=${toName}]`).appendChild(oldPiece)
+    const oldPiece = gameContainer.querySelector(`[square=${fromName}] div`);
+    const newPiece = gameContainer.querySelector(`[square=${toName}] div`);
+    const fromSquare = gameContainer.querySelector(`[square=${fromName}]`);
+    const toSquare = gameContainer.querySelector(`[square=${toName}]`);
+
+    
+    if (special == "castle") {
+        gameBoard[toRank][toFile] = "None";
+        gameBoard[fromRank][fromFile] = "None";
+        if (toFile - fromFile > 0) {
+            
+            gameBoard[fromRank][6] = toPiece;
+            gameBoard[fromRank][5] = fromPiece;
+            toSquare.innerHTML = '';
+            fromSquare.innerHTML = '';
+            const kingPlace = "g" + Math.abs(8 - fromRank);
+            const castlePlace = "f" + Math.abs(8 - fromRank);
+            gameContainer.querySelector(`[square=${kingPlace}]`).appendChild(oldPiece);
+            gameContainer.querySelector(`[square=${castlePlace}]`).appendChild(newPiece);
+        } else {
+
+            gameBoard[fromRank][2] = toPiece;
+            gameBoard[fromRank][3] = fromPiece;
+            toSquare.innerHTML = '';
+            fromSquare.innerHTML = '';
+            const kingPlace = "c" + Math.abs(8 - fromRank);
+            const castlePlace = "d" + Math.abs(8 - fromRank);
+            gameContainer.querySelector(`[square=${kingPlace}]`).appendChild(oldPiece);
+            gameContainer.querySelector(`[square=${castlePlace}]`).appendChild(newPiece)
+
+
+        }
+
+    } else if (special == "promotion") {
+        const newPieceType = fromPiece[0] + "Queen"
+        gameBoard[toRank][toFile] = newPieceType;
+        gameBoard[fromRank][fromFile] = "None";
+        toSquare.innerHTML = '';
+        oldPiece.children[0].src = pieceMap[newPieceType];
+        toSquare.appendChild(oldPiece);
+
+    } else if (special == "enpassant") {
+        gameBoard[toRank][toFile] = fromPiece;
+        const multiplier = currentPlayer == 'w' ? 1 : -1;
+        const takenPawnName = String.fromCharCode(toFile + 97) + (Math.abs(8 - toRank) -multiplier);
+        gameBoard[toRank+multiplier][toFile] = "None";
+        gameBoard[fromRank][fromFile] = "None";
+        toSquare.innerHTML = '';
+        toSquare.appendChild(oldPiece);
+        gameContainer.querySelector(`[square=${takenPawnName}]`).innerHTML = '';
+    } else  {
+        //Move square from old to empty
+        gameBoard[toRank][toFile] = fromPiece
+        gameBoard[fromRank][fromFile] = "None";
+        toSquare.innerHTML = '';
+        toSquare.appendChild(oldPiece);
+        console.log(oldPiece);
+    }
+    
 }
 
 
